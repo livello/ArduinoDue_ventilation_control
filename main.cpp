@@ -12,45 +12,62 @@
 #include <IPAddress.h>
 #include <WMath.h>
 #include <EthernetServer.h>
+//#include "SdFat.h"
+
 #include "ChibiOS_ARM.h"
 #include "dht.h"
 #include "OneWire.h"
+#include <ky040_encoder.h>
+//#include "bench_sd.h"
+#include "sd_card_w5100.h"
 
+#include <Modbus.h>
+#include <ModbusIP.h>
 
-constexpr uint8_t pin_onewire   { 35 };
+#define SWITCH_ISTS 100
 
-
+#define BOARD_LED           13      // I'm alive blinker
 #define DHTPIN 33
+#define LED_PIN 13
+#define ONEWIRE_PIN 35
 
-const uint8_t LED_PIN = 13;
+constexpr uint8_t pin_onewire{35};
+
 dht dht_sensor;
 
-OneWire ds(35);
+OneWire ds(ONEWIRE_PIN);
 
 int value = 0;
 SEMAPHORE_DECL(sem, 0);
 
-byte mac[] = {
-        0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED};
-IPAddress ip(192, 168, 2, 40);
+ModbusIP mb;
 
+byte mac[] = {
+        0xDE,
+        0xAD,
+        0xBE,
+        0xEF,
+        0xFE,
+        0xED};
+IPAddress ip(192, 168, 2, 40);
 EthernetServer server(80);
+EthernetClient client;
+
 
 int numPins = 4;
 int pins[] = {4, 5, 6, 7};    // Пины для реле
 int pinState[] = {0, 0, 0, 0};  // Состояние пинов
-float h=0, t=0;
+float h = 0, t = 0;
 
-struct
-{
+struct {
     uint32_t total;
     uint32_t ok;
     uint32_t crc_error;
     uint32_t time_out;
     uint32_t unknown;
-} stat1 = { 0,0,0,0,0 };
+} stat1 = {0, 0, 0, 0, 0};
 
-void show_ds18b20(){
+void show_ds18b20() {
     byte i;
     byte present = 0;
     byte type_s;
@@ -58,7 +75,7 @@ void show_ds18b20(){
     byte addr[8];
     float celsius, fahrenheit;
 
-    if ( !ds.search(addr)) {
+    if (!ds.search(addr)) {
         Serial.println("No more addresses.");
         Serial.println();
         ds.reset_search();
@@ -67,7 +84,7 @@ void show_ds18b20(){
     }
 
     Serial.print("ROM =");
-    for( i = 0; i < 8; i++) {
+    for (i = 0; i < 8; i++) {
         Serial.write(' ');
         Serial.print(addr[i], HEX);
     }
@@ -111,7 +128,7 @@ void show_ds18b20(){
     Serial.print("  Data = ");
     Serial.print(present, HEX);
     Serial.print(" ");
-    for ( i = 0; i < 9; i++) {           // we need 9 bytes
+    for (i = 0; i < 9; i++) {           // we need 9 bytes
         data[i] = ds.read();
         Serial.print(data[i], HEX);
         Serial.print(" ");
@@ -139,7 +156,7 @@ void show_ds18b20(){
         else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
         //// default is 12 bit resolution, 750 ms conversion time
     }
-    celsius = (float)raw / 16.0;
+    celsius = (float) raw / 16.0;
     fahrenheit = celsius * 1.8 + 32.0;
     Serial.print("  Temperature = ");
     Serial.print(celsius);
@@ -165,8 +182,7 @@ static THD_FUNCTION(Thread1, arg) {
         uint32_t stop = micros();
 
         stat1.total++;
-        switch (chk)
-        {
+        switch (chk) {
             case DHTLIB_OK:
                 stat1.ok++;
                 h = dht_sensor.humidity;
@@ -190,11 +206,13 @@ static THD_FUNCTION(Thread1, arg) {
                 break;
         }
 
-        // following function must be called periodically
-      show_ds18b20();
+        Serial.print("A0:");
+        Serial.print((analogRead(A0)/4096.0-0.5)*5000-175);
+        Serial.print(" raw;");
 
-
-
+        show_ds18b20();
+        demo_ky040();
+//        bench_sd_loop();
     }
 }
 
@@ -231,6 +249,8 @@ void chSetup() {
 void setup() {
     Serial.begin(115200);
     delay(10);
+    setup_ky040();
+    sd_card_w5100_setup();
 
     // Open serial communications and wait for port to open:
 
@@ -240,20 +260,26 @@ void setup() {
     server.begin();
     Serial.print("server is at ");
     Serial.println(Ethernet.localIP());
+
+    mb.config(mac, ip);
+    mb.addIsts (SWITCH_ISTS);
+    mb.addHreg(SWITCH_ISTS+1);
+    mb.addHreg(SWITCH_ISTS+ 1);
+
     pinMode(5, OUTPUT);
     pinMode(6, OUTPUT);
     pinMode(7, OUTPUT);
     pinMode(4, OUTPUT);
+    analogReadResolution(12);
     chBegin(chSetup);
+//    bench_sd_setup();
 
 }
-
 void loop() {
     delay(10);
-
-    EthernetClient client = server.available();
+    mb.task ();
+    client = server.available();
     if (client) {
-
         Serial.println("" + client.readString());
         client.println("HTTP/1.1 200 OK");
         client.println("Content-Type: text/html");
@@ -286,15 +312,5 @@ void loop() {
         client.println("</body>");
         client.println("</html>");
         client.stop();
-
     }
-
 }
-
-
-
-
-
-
-
-
