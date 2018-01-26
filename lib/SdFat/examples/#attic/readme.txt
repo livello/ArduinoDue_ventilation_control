@@ -7,7 +7,7 @@ append - This sketch creates a large file by successive
 
 average - A demonstration of parsing floating point numbers.
 
-benchSD - A read/write benchmark for the standard Arduino SD.h library.
+benchSD - A read/write benchmark for the standard Arduino SD.humidity_DHT22 library.
 
 bufstream - ibufsteam to parse a line and obufstream to format a line.             
 
@@ -19,10 +19,10 @@ HelloWorld - Create a serial output stream.
 
 MiniSerial - SdFat minimal serial support for debug.
 
-PrintBenchmarkSD - Bench mark SD.h print.
+PrintBenchmarkSD - Bench mark SD.humidity_DHT22 print.
 
 readlog - Read file. Demo of pathnames and current working directory.
 
-SD_Size - Determine flash used by SD.h example.
+SD_Size - Determine flash used by SD.humidity_DHT22 example.
 
 SdFatSize - Determine flash used by SdFat.

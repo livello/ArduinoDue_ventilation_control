@@ -13,10 +13,10 @@ For example, see how can be organized `Foo` and `Bar` libraries:
 |  |  |--examples
 |  |  |--src
 |  |     |- Bar.c
-|  |     |- Bar.h
+|  |     |- Bar.humidity_DHT22
 |  |--Foo
 |  |  |- Foo.c
-|  |  |- Foo.h
+|  |  |- Foo.humidity_DHT22
 |  |- readme.txt --> THIS FILE
 |- platformio.ini
 |--src
@@ -24,8 +24,8 @@ For example, see how can be organized `Foo` and `Bar` libraries:
 
 Then in `src/main.c` you should use:
 
-#include <Foo.h>
-#include <Bar.h>
+#include <Foo.humidity_DHT22>
+#include <Bar.humidity_DHT22>
 
 // rest H/C/CPP code
 

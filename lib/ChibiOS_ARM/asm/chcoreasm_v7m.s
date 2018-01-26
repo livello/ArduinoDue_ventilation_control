@@ -34,8 +34,8 @@
 #endif
 
 #define _FROM_ASM_
-#include "chconf.h"
-#include "chcore.h"
+#include "chconf.humidity_DHT22"
+#include "chcore.humidity_DHT22"
 
 #if !defined(__DOXYGEN__)
 

@@ -1,5 +1,5 @@
-Only in src/utility: board.h
-diff org_src/utility/chconf.h src/utility/chconf.h
+Only in src/utility: board.humidity_DHT22
+diff org_src/utility/chconf.humidity_DHT22 src/utility/chconf.humidity_DHT22
 49c49
 < #define CH_CFG_ST_FREQUENCY                 10000
 ---
@@ -44,7 +44,7 @@ diff org_src/utility/chcore_v7m.c src/utility/chcore_v7m.c
 > #endif  // CORE_TEENSY
 > // WHG
 > //------------------------------------------------------------------------------
-diff org_src/utility/chcore_v7m.h src/utility/chcore_v7m.h
+diff org_src/utility/chcore_v7m.humidity_DHT22 src/utility/chcore_v7m.humidity_DHT22
 375c375
 < 
 ---
@@ -68,7 +68,7 @@ diff org_src/utility/chcore_v7m.h src/utility/chcore_v7m.h
 >   return 0;
 > #endif  // CORE_TEENSY  WHG  
 Only in src/utility: chcore_v7m_asm.c
-diff org_src/utility/cmparams.h src/utility/cmparams.h
+diff org_src/utility/cmparams.humidity_DHT22 src/utility/cmparams.humidity_DHT22
 37c37,41
 < #define CORTEX_MODEL            4
 ---
@@ -82,10 +82,10 @@ diff org_src/utility/cmparams.h src/utility/cmparams.h
 ---
 > #define CORTEX_HAS_FPU          0  // WHG
 75c79,93
-< #include "stm32f4xx.h"
+< #include "stm32f4xx.humidity_DHT22"
 ---
-> //#include "stm32f4xx.h"  WHG
-> #include <Arduino.h>  // WHG
+> //#include "stm32f4xx.humidity_DHT22"  WHG
+> #include <Arduino.humidity_DHT22>  // WHG
 > #ifdef CORE_TEENSY
 > #undef __disable_irq
 > #undef __enable_irq
@@ -97,7 +97,7 @@ diff org_src/utility/cmparams.h src/utility/cmparams.h
 > } IRQn_Type;
 > 
 > #define __NVIC_PRIO_BITS 4
-> #include "../CMSIS/core_cm4.h"
+> #include "../CMSIS/core_cm4.humidity_DHT22"
 > #endif  // CORE_TEENSY
 76a95
 > #if 0 // WHG
@@ -105,11 +105,11 @@ diff org_src/utility/cmparams.h src/utility/cmparams.h
 < 
 ---
 > #endif  // WHG
-diff org_src/utility/hal.h src/utility/hal.h
+diff org_src/utility/hal.humidity_DHT22 src/utility/hal.humidity_DHT22
 28a29,32
-> #include "nvic.h" // WHG
-> #include "mcuconf.h"  // WHG
-> #include "hal_lld.h"  // WHG
+> #include "nvic.humidity_DHT22" // WHG
+> #include "mcuconf.humidity_DHT22"  // WHG
+> #include "hal_lld.humidity_DHT22"  // WHG
 > #if 0  // WHG
 63c67
 < 
@@ -123,7 +123,7 @@ diff org_src/utility/hal.h src/utility/hal.h
 < 
 ---
 > #endif  // WHG
-diff org_src/utility/mcuconf.h src/utility/mcuconf.h
+diff org_src/utility/mcuconf.humidity_DHT22 src/utility/mcuconf.humidity_DHT22
 29a30,31
 > #define WHG_ST_IRQ_PRIORITY 0XF
 > 

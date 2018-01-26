@@ -1,0 +1,17 @@
+{
+    "name": "ChibiOS_ARM",
+    "keywords": "chibios, rtos, freertos, chibi",
+    "description": "ChibiOS for ARM.",
+    "authors":
+    {
+        "name": "Bill Greiman",
+        "url": "http://www.pjrc.com/teensy/td_libs_OneWire.htmlhttps://github.com/greiman"
+    },
+    "version": "3.0.3",
+    "downloadUrl": "https://www.ri48.ru/iss/tid/arduino_libraries/ChibiOS_ARM.zip",
+    "export": {
+        "include": "ChibiOS_ARM"
+    },
+    "frameworks": "arduino",
+    "platforms": "atmelsam, teensy"
+}
