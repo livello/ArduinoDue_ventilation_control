@@ -12,13 +12,11 @@
 #include <IPAddress.h>
 #include <WMath.h>
 #include <EthernetServer.h>
-//#include "SdFat.h"
 
 #include "ChibiOS_ARM.h"
 #include "dht.h"
 #include "OneWire.h"
 #include <ky040_encoder.h>
-//#include "bench_sd.h"
 #include "sd_card_w5100.h"
 
 #include <Modbus.h>
@@ -29,18 +27,18 @@
 #define BOARD_LED           13      // I'm alive blinker
 #define DHTPIN 33
 #define LED_PIN 13
-#define ONEWIRE_PIN 35
+#define ONEWIRE_PIN 12
 
 constexpr uint8_t pin_onewire{35};
 
 dht dht_sensor;
 
-OneWire ds(ONEWIRE_PIN);
+OneWire dallas18b20(ONEWIRE_PIN);
 
 int value = 0;
 SEMAPHORE_DECL(sem, 0);
 
-ModbusIP mb;
+ModbusIP modbusIP;
 
 byte mac[] = {
         0xDE,
@@ -49,15 +47,18 @@ byte mac[] = {
         0xEF,
         0xFE,
         0xED};
-IPAddress ip(192, 168, 2, 40);
+IPAddress ip(192, 168, 6, 20);
 EthernetServer server(80);
 EthernetClient client;
 
 
+int ethernet_config_by_hand = 0;
 int numPins = 4;
 int pins[] = {4, 5, 6, 7};    // Пины для реле
 int pinState[] = {0, 0, 0, 0};  // Состояние пинов
-float h = 0, t = 0;
+int relayPins[] = {22,5,6,7};
+float humidity_DHT22 = 0, temp_DHT22 = 0;
+float temp_DS18B20;
 
 struct {
     uint32_t total;
@@ -67,18 +68,22 @@ struct {
     uint32_t unknown;
 } stat1 = {0, 0, 0, 0, 0};
 
+void sendRelayControlPageToEthernetClient();
+
+void updateRelays();
+
 void show_ds18b20() {
     byte i;
     byte present = 0;
     byte type_s;
     byte data[12];
     byte addr[8];
-    float celsius, fahrenheit;
 
-    if (!ds.search(addr)) {
+
+    if (!dallas18b20.search(addr)) {
         Serial.println("No more addresses.");
         Serial.println();
-        ds.reset_search();
+        dallas18b20.reset_search();
         delay(250);
         return;
     }
@@ -114,22 +119,23 @@ void show_ds18b20() {
             return;
     }
 
-    ds.reset();
-    ds.select(addr);
-    ds.write(0x44, 1);        // start conversion, with parasite power on at the end
+    dallas18b20.reset();
+    dallas18b20.select(addr);
+    dallas18b20.write(0x44, 1);        // start conversion, with parasite power on at the end
 
-    delay(1000);     // maybe 750ms is enough, maybe not
-    // we might do a ds.depower() here, but the reset will take care of it.
+//    delay(1000);     // maybe 750ms is enough, maybe not
+    chThdSleepMilliseconds(1000);
+    // we might do a dallas18b20.depower() here, but the reset will take care of it.
 
-    present = ds.reset();
-    ds.select(addr);
-    ds.write(0xBE);         // Read Scratchpad
+    present = dallas18b20.reset();
+    dallas18b20.select(addr);
+    dallas18b20.write(0xBE);         // Read Scratchpad
 
     Serial.print("  Data = ");
     Serial.print(present, HEX);
     Serial.print(" ");
     for (i = 0; i < 9; i++) {           // we need 9 bytes
-        data[i] = ds.read();
+        data[i] = dallas18b20.read();
         Serial.print(data[i], HEX);
         Serial.print(" ");
     }
@@ -156,13 +162,11 @@ void show_ds18b20() {
         else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
         //// default is 12 bit resolution, 750 ms conversion time
     }
-    celsius = (float) raw / 16.0;
-    fahrenheit = celsius * 1.8 + 32.0;
+    temp_DS18B20 = (float) raw / 16.0;
     Serial.print("  Temperature = ");
-    Serial.print(celsius);
+    Serial.print(temp_DS18B20);
     Serial.print(" Celsius, ");
-    Serial.print(fahrenheit);
-    Serial.println(" Fahrenheit");
+
 }
 
 static THD_WORKING_AREA(waThread1, 64);
@@ -185,12 +189,11 @@ static THD_FUNCTION(Thread1, arg) {
         switch (chk) {
             case DHTLIB_OK:
                 stat1.ok++;
-                h = dht_sensor.humidity;
-                // Read temperature as Celsius (the default)
-                t = dht_sensor.temperature;
-                Serial.print(h);
+                humidity_DHT22 = dht_sensor.humidity;
+                temp_DHT22 = dht_sensor.temperature;
+                Serial.print(humidity_DHT22);
                 Serial.print(" %, temperature:");
-                Serial.println(t);
+                Serial.println(temp_DHT22);
                 break;
             case DHTLIB_ERROR_CHECKSUM:
                 stat1.crc_error++;
@@ -207,12 +210,9 @@ static THD_FUNCTION(Thread1, arg) {
         }
 
         Serial.print("A0:");
-        Serial.print((analogRead(A0)/4096.0-0.5)*5000-175);
+        Serial.print((analogRead(A0) / 4096.0 - 0.5) * 5000 - 175);
         Serial.print(" raw;");
-
         show_ds18b20();
-        demo_ky040();
-//        bench_sd_loop();
     }
 }
 
@@ -249,68 +249,129 @@ void chSetup() {
 void setup() {
     Serial.begin(115200);
     delay(10);
-    setup_ky040();
+//    setup_ky040();
     sd_card_w5100_setup();
 
     // Open serial communications and wait for port to open:
 
 
     // start the Ethernet connection and the server:
-    Ethernet.begin(mac, ip);
+    Ethernet.begin(mac);
     server.begin();
     Serial.print("server is at ");
+    delay(2000);
     Serial.println(Ethernet.localIP());
 
-    mb.config(mac, ip);
-    mb.addIsts (SWITCH_ISTS);
-    mb.addHreg(SWITCH_ISTS+1);
-    mb.addHreg(SWITCH_ISTS+ 1);
+    modbusIP.config(mac, Ethernet.localIP());
+    modbusIP.addIsts (SWITCH_ISTS);
+    modbusIP.addHreg(SWITCH_ISTS-10);
+    modbusIP.addHreg(SWITCH_ISTS-20);
 
     pinMode(5, OUTPUT);
     pinMode(6, OUTPUT);
     pinMode(7, OUTPUT);
-    pinMode(4, OUTPUT);
+    pinMode(22, OUTPUT);
+
     analogReadResolution(12);
     chBegin(chSetup);
-//    bench_sd_setup();
+
 
 }
+
 void loop() {
     delay(10);
-    mb.task ();
+    modbusIP.task ();
     client = server.available();
+
     if (client) {
-        Serial.println("" + client.readString());
-        client.println("HTTP/1.1 200 OK");
-        client.println("Content-Type: text/html");
-        client.println();
-        client.println("<html>");
-        client.println("<head>");
-        client.println("<title>Zelectro. Relay + Ethernet shield.</title>");
-        client.println("</head>");
-        client.println("<body>");
-        client.println("<h3>Zelectro. Relay + Ethernet shield.</h3>");
-        client.println("<form method='post'>");
-        client.print("<div>Relay 1 <input type='checkbox' ");
-        if (pinState[0] == 1)
-            client.print("checked");
-        client.println(" name='r0'></div>");
-        client.print("<div>Relay 2 <input type='checkbox' ");
-        if (pinState[1] == 1)
-            client.print("checked");
-        client.println(" name='r1'></div>");
-        client.print("<div>Relay 3 <input type='checkbox' ");
-        if (pinState[2] == 1)
-            client.print("checked");
-        client.println(" name='r2'></div>");
-        client.print("<div>Relay 4 <input type='checkbox' ");
-        if (pinState[3] == 1)
-            client.print("checked");
-        client.println(" name='r3'></div>");
-        client.println("<input type='submit' value='Refresh'>");
-        client.println("</form>");
-        client.println("</body>");
-        client.println("</html>");
+        String webRequestType = client.readStringUntil('/');
+        if (webRequestType.compareTo("GET ") == 0) {
+            String requestedFileName = client.readStringUntil(' ');
+
+            Serial.println("GET");
+            Serial.println(requestedFileName);
+            if (requestedFileName.length() > 0)
+                client.write(sdW5100_readEntireFile(requestedFileName.c_str()),
+                             sdW5100_getFileSize(requestedFileName.c_str()));
+            else {
+                sendRelayControlPageToEthernetClient();
+            }
+        } else if (webRequestType.compareTo("POST ") == 0) {
+            String clientRequest = client.readString();
+            if (clientRequest.indexOf("r0=on")>0)
+                pinState[0] = 1;
+            else
+                pinState[0] = 0;
+            if (clientRequest.indexOf("r1=on")>0)
+                pinState[1] = 1;
+            else
+                pinState[1] = 0;
+            if (clientRequest.indexOf("r2=on")>0)
+                pinState[2] = 1;
+            else
+                pinState[2] = 0;
+            if (clientRequest.indexOf("r3=on")>0)
+                pinState[3] = 1;
+            else
+                pinState[3] = 0;
+            updateRelays();
+
+
+            sendRelayControlPageToEthernetClient();
+        } else {
+            Serial.println("." + webRequestType + ".");
+            Serial.println("" + client.readString());
+            sendRelayControlPageToEthernetClient();
+        }
         client.stop();
     }
+}
+
+void updateRelays() {
+    for(int i=0; i < 4; i++){
+                if(pinState[i])
+                    digitalWrite(relayPins[i],HIGH);
+                else
+                    digitalWrite(relayPins[i],LOW);
+            }
+}
+
+void sendRelayControlPageToEthernetClient() {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html");
+    client.println();
+    client.println("<html>");
+    client.println("<head>");
+    client.println( "<meta http-equiv=\"refresh\" content=\"30\">");
+    client.println("<title>Zelectro. Relay + Ethernet shield.</title>");
+    client.println("</head>");
+    client.println("<body>");
+    client.println("<h3>Zelectro. Relay + Ethernet shield.</h3>");
+    client.println("<form method='post'>");
+    client.print("<div>Relay 1 <input type='checkbox' ");
+    if (pinState[0] == 1)
+        client.print("checked");
+    client.println(" name='r0'></div>");
+    client.print("<div>Relay 2 <input type='checkbox' ");
+    if (pinState[1] == 1)
+        client.print("checked");
+    client.println(" name='r1'></div>");
+    client.print("<div>Relay 3 <input type='checkbox' ");
+    if (pinState[2] == 1)
+        client.print("checked");
+    client.println(" name='r2'></div>");
+    client.print("<div>Relay 4 <input type='checkbox' ");
+    if (pinState[3] == 1)
+        client.print("checked");
+    client.println(" name='r3'></div>");
+    client.println("<input type='submit' value='Refresh'>");
+    client.println("</form>");
+    client.println("Temperature:");
+    client.print(temp_DS18B20);
+    client.print(" celsius, ");
+    client.print(temp_DHT22);
+    client.print(" celsius, humidity(%):");
+    client.print(humidity_DHT22);
+    client.println("</body>");
+    client.println("</html>");
 }

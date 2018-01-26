@@ -23,36 +23,135 @@ by Limor Fried
 modified 9 Apr 2012
 by Tom Igoe
 */
-// include the SD library:
+
+//template<class T> inline Print &operator <<(Print &obj, T arg) { obj.print(arg); return obj; }
+
+
+#include "sd_card_w5100.h"
 #include <SD.h>
 #include <SPI.h>
+//#include <iostream>
 
 // set up variables using the SD utility library functions:
 Sd2Card card;
 SdVolume volume;
-SdFile root;
+SdFile sdFile;
+File myFile;
 
-// change this to match your SD shield or module;
+
+char *entireFileContents;
+
 // Arduino Ethernet shield: pin 4
-// Adafruit SD shields and modules: pin 10
-// Sparkfun SD shield: pin 8
 const int chipSelect = 4;
 
-void sd_card_w5100_setup()
-{
-// Open serial communications and wait for port to open:
-        Serial.print("\nInitializing SD card...");
+void bench() {
+/*    uint8_t buf[BUF_SIZE];
+    long maxLatency,minLatency,totalLatency,temp_DHT22;
+
+
+    myFile = SD.open("test.txt", FILE_WRITE);
+
+    // if the file opened okay, write to it:
+    if (myFile) {
+        Serial.print("Writing to test.txt...");
+        myFile.println("testing 1, 2, 3.");
+        // close the file:
+
+    } else {
+        // if the file didn'temp_DHT22 open, print an error:
+        Serial.println("error opening test.txt");
+    }
+
+
+    for (uint16_t i = 0; i < (BUF_SIZE - 2); i++) {
+        buf[i] = 'A' + (i % 26);
+    }
+    buf[BUF_SIZE - 2] = '\r';
+    buf[BUF_SIZE - 1] = '\n';
+
+    Serial.println("File size MB: ");
+    Serial.print(FILE_SIZE_MB);
+    Serial.println("Buffer size ");
+    Serial.print(BUF_SIZE);
+    Serial.println("Starting write test, please wait.");
+
+// do write test
+    uint32_t n = FILE_SIZE / sizeof(buf);
+    Serial.println("write speed and latency");
+    Serial.print(" speed,max,min,avg");
+    Serial.print(" KB/Sec,usec,usec,usec");
+    for (uint8_t nTest = 0; nTest < WRITE_PASS_COUNT; nTest++) {
+//        myFile.truncate(0);
+        maxLatency = 0;
+        minLatency = 9999999;
+        totalLatency = 0;
+        temp_DHT22 = millis();
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t m = micros();
+            if (myFile.write(buf, sizeof(buf)) != sizeof(buf)) {
+                Serial.println("write failed");
+            }
+            m = micros() - m;
+            if (maxLatency < m) {
+                maxLatency = m;
+            }
+            if (minLatency > m) {
+                minLatency = m;
+            }
+            totalLatency += m;
+        }
+        myFile.flush();
+        temp_DHT22 = millis() - temp_DHT22;
+        int s = myFile.size();
+        Serial.println(s / temp_DHT22);
+        Serial.print(',');
+        Serial.print(maxLatency);
+        Serial.print(',');
+        Serial.print(minLatency);
+        Serial.print(',');
+        Serial.print(totalLatency / n);
+    }*/
+    myFile.close();
+    Serial.println("done.");
+}
+
+char* sdW5100_readEntireFile(const char *filename) {
+    SdFile requestedFile;
+    if(requestedFile.open(sdFile,filename)) {
+        Serial.println("Success open INDEX.HTM:");
+        long time_started = millis();
+        entireFileContents = new char[requestedFile.fileSize()];
+        requestedFile.read(entireFileContents,requestedFile.fileSize());
+        Serial.print(millis()-time_started);
+        Serial.println(" milliseconds takes to read.");
+        return entireFileContents;
+        }
+    else {
+        Serial.print("Failed sdFile.open ");
+        Serial.println(filename);
+
+    }
+    return NULL;
+
+}
+uint32_t sdW5100_getFileSize(const char *filename){
+    SdFile requestedFile;
+    if(requestedFile.open(sdFile,filename))
+        return requestedFile.fileSize();
+    else
+        return 0;
+}
+
+void sd_card_w5100_setup() {
+    Serial.print("\nInitializing SD card...");
     // On the Ethernet Shield, CS is pin 4. It's set as an output by default.
     // Note that even if it's not used as the CS pin, the hardware SS pin
     // (10 on most Arduino boards, 53 on the Mega) must be left as an output
     // or the SD library functions will not work.
     pinMode(chipSelect, OUTPUT);     // change this to 53 on a mega
-    SPI.begin(chipSelect); //habe ich eingeführt, da es in einigen Foren erwähnt wird, funktioniert jedoch mit und ohne nicht. //I made this, becaus it's mentioned in severals forums, but it didn't workt wiht it and whitout it   [/b]  // change this to 53 on a mega
+    SPI.begin(chipSelect); //but it didn'temp_DHT22 workt wiht it and whitout it   [/b]  // change this to 53 on a mega
 
-
-    // we'll use the initialization code from the utility libraries
-    // since we're just testing if the card is working!
-    if (!card.init(SPI_HALF_SPEED, chipSelect)) {
+    if (!card.init(SPI_FULL_SPEED, chipSelect)) {
         Serial.println("initialization failed. Things to check:");
         Serial.println("* is a card is inserted?");
         Serial.println("* Is your wiring correct?");
@@ -64,7 +163,7 @@ void sd_card_w5100_setup()
 
     // print the type of card
     Serial.print("\nCard type: ");
-    switch(card.type()) {
+    switch (card.type()) {
         case SD_CARD_TYPE_SD1:
             Serial.println("SD1");
             break;
@@ -105,8 +204,10 @@ void sd_card_w5100_setup()
 
 
     Serial.println("\nFiles found on the card (name, date and size in bytes): ");
-    root.openRoot(volume);
-
+    sdFile.openRoot(volume);
     // list all files in the card with date and size
-    root.ls(LS_R | LS_DATE | LS_SIZE);
+    sdFile.ls(LS_R | LS_DATE | LS_SIZE);
+    Serial.println(sdW5100_readEntireFile("INDEX.HTM"));
 }
+
+
