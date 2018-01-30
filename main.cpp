@@ -9,6 +9,7 @@
 #include <HardwareSerial.h>
 #include <SPI.h>
 #include <Ethernet.h>
+#include <EthernetUdp.h>
 #include <IPAddress.h>
 #include <WMath.h>
 #include <EthernetServer.h>
@@ -28,6 +29,7 @@
 #define DHTPIN 33
 #define LED_PIN 13
 #define ONEWIRE_PIN 12
+#define UDP_BROADCAST_PORT 3000
 
 constexpr uint8_t pin_onewire{35};
 
@@ -37,8 +39,9 @@ OneWire dallas18b20(ONEWIRE_PIN);
 
 int value = 0;
 SEMAPHORE_DECL(sem, 0);
+long udpMessageCount = 0;
+char message_buffer[100];
 
-ModbusIP modbusIP;
 
 byte mac[] = {
         0xDE,
@@ -47,14 +50,18 @@ byte mac[] = {
         0xEF,
         0xFE,
         0xED};
-IPAddress ip(192, 168, 6, 20);
+ModbusIP modbusIP;
+IPAddress ip_default(192, 168, 6, 20);
+IPAddress ip_udp_client(192, 168, 6, 1);
 EthernetServer server(80);
 EthernetClient client;
+EthernetUDP udpEthernet;
+IPAddress broadcastIp;
 
 
 int ethernet_config_by_hand = 0;
-int numPins = 4;
-int pins[] = {4, 5, 6, 7};    // Пины для реле
+const int numPins = 4;
+const int pins[] = {4, 5, 6, 7};    // Пины для реле
 int pinState[] = {0, 0, 0, 0};  // Состояние пинов
 int relayPins[] = {22,5,6,7};
 float humidity_DHT22 = 0, temp_DHT22 = 0;
@@ -71,6 +78,7 @@ struct {
 void sendRelayControlPageToEthernetClient();
 
 void updateRelays();
+void broadcastUdpMessage(const char*);
 
 void show_ds18b20() {
     byte i;
@@ -218,7 +226,11 @@ static THD_FUNCTION(Thread1, arg) {
 
 
 static THD_WORKING_AREA(waThread2, 64);
-
+void broadcastUdpMessageTest(){
+    udpEthernet.beginPacket(ip_udp_client, UDP_BROADCAST_PORT);
+    udpEthernet.write("Hello from Arduino Due");
+    udpEthernet.endPacket();
+}
 static THD_FUNCTION(Thread2, arg) {
     pinMode(LED_PIN, OUTPUT);
     while (1) {
@@ -232,10 +244,23 @@ static THD_FUNCTION(Thread2, arg) {
 
         // Sleep for 200 milliseconds.
         chThdSleepMilliseconds(2000);
+
+        sprintf(message_buffer, "Temp DHT22:%f. Humidity: %f%. Temp DS18B20:%f C \n", humidity_DHT22, temp_DHT22, temp_DS18B20);
+        broadcastUdpMessage(message_buffer);
+        broadcastUdpMessageTest();
     }
 }
 
-void chSetup() {
+void broadcastUdpMessage(const char* message){
+    char internal_message_buffer[100];
+    udpMessageCount++;
+    sprintf(internal_message_buffer, "%ld_%ld: %s", udpMessageCount, millis(), message);
+    udpEthernet.beginPacket(broadcastIp, UDP_BROADCAST_PORT);
+    udpEthernet.write(internal_message_buffer);
+    udpEthernet.endPacket();
+}
+
+void threadChildsSetup() {
 
     // start blink thread
     chThdCreateStatic(waThread1, sizeof(waThread1),
@@ -252,28 +277,26 @@ void setup() {
 //    setup_ky040();
     sd_card_w5100_setup();
 
-    // Open serial communications and wait for port to open:
-
-
-    // start the Ethernet connection and the server:
     Ethernet.begin(mac);
     server.begin();
+    udpEthernet.begin(UDP_BROADCAST_PORT);
+
     Serial.print("server is at ");
     delay(2000);
     Serial.println(Ethernet.localIP());
+    broadcastIp = Ethernet.localIP();
+    broadcastIp[3] = 255;
 
     modbusIP.config(mac, Ethernet.localIP());
     modbusIP.addIsts (SWITCH_ISTS);
     modbusIP.addHreg(SWITCH_ISTS-10);
     modbusIP.addHreg(SWITCH_ISTS-20);
 
-    pinMode(5, OUTPUT);
-    pinMode(6, OUTPUT);
-    pinMode(7, OUTPUT);
-    pinMode(22, OUTPUT);
+    for(int i=0;i<numPins;i++)
+    pinMode(pins[i], OUTPUT);
 
     analogReadResolution(12);
-    chBegin(chSetup);
+    chBegin(threadChildsSetup);
 
 
 }
