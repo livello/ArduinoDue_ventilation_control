@@ -17,7 +17,7 @@
 #include "ChibiOS_ARM.h"
 #include "dht.h"
 #include "OneWire.h"
-#include <ky040_encoder.h>
+//#include "ky040_encoder.h"
 #include "sd_card_w5100.h"
 
 #include <Modbus.h>
@@ -31,8 +31,6 @@
 #define ONEWIRE_PIN 12
 #define UDP_BROADCAST_PORT 3000
 
-constexpr uint8_t pin_onewire{35};
-
 dht dht_sensor;
 
 OneWire dallas18b20(ONEWIRE_PIN);
@@ -40,7 +38,7 @@ OneWire dallas18b20(ONEWIRE_PIN);
 int value = 0;
 SEMAPHORE_DECL(sem, 0);
 long udpMessageCount = 0;
-char message_buffer[100];
+
 
 
 byte mac[] = {
@@ -171,9 +169,9 @@ void show_ds18b20() {
         //// default is 12 bit resolution, 750 ms conversion time
     }
     temp_DS18B20 = (float) raw / 16.0;
-    Serial.print("  Temperature = ");
+    Serial.print("  Temperature ds18b20= ");
     Serial.print(temp_DS18B20);
-    Serial.print(" Celsius, ");
+    Serial.println(" Cels");
 
 }
 
@@ -196,7 +194,6 @@ static THD_FUNCTION(Thread1, arg) {
         stat1.total++;
         switch (chk) {
             case DHTLIB_OK:
-                stat1.ok++;
                 humidity_DHT22 = dht_sensor.humidity;
                 temp_DHT22 = dht_sensor.temperature;
                 Serial.print(humidity_DHT22);
@@ -204,22 +201,21 @@ static THD_FUNCTION(Thread1, arg) {
                 Serial.println(temp_DHT22);
                 break;
             case DHTLIB_ERROR_CHECKSUM:
-                stat1.crc_error++;
                 Serial.print("Checksum error,\t");
                 break;
             case DHTLIB_ERROR_TIMEOUT:
-                stat1.time_out++;
                 Serial.print("Time out error,\t");
                 break;
             default:
-                stat1.unknown++;
                 Serial.print("Unknown error,\t");
                 break;
         }
 
         Serial.print("A0:");
-        Serial.print((analogRead(A0) / 4096.0 - 0.5) * 5000 - 175);
+        Serial.print(analogRead(A0));
         Serial.print(" raw;");
+        Serial.print((analogRead(A0) / 4096.0 - 0.5) * 5000 - 175);
+
         show_ds18b20();
     }
 }
@@ -233,6 +229,7 @@ void broadcastUdpMessageTest(){
 }
 static THD_FUNCTION(Thread2, arg) {
     pinMode(LED_PIN, OUTPUT);
+    char message_buffer[100];
     while (1) {
         digitalWrite(LED_PIN, HIGH);
 
@@ -245,19 +242,24 @@ static THD_FUNCTION(Thread2, arg) {
         // Sleep for 200 milliseconds.
         chThdSleepMilliseconds(2000);
 
-        sprintf(message_buffer, "Temp DHT22:%f. Humidity: %f%. Temp DS18B20:%f C \n", humidity_DHT22, temp_DHT22, temp_DS18B20);
-        broadcastUdpMessage(message_buffer);
-        broadcastUdpMessageTest();
+//        gStringMessageBuffer.printf("Temp DHT22:%f. Humidity: %f  Temp DS18B20:%f", humidity_DHT22, temp_DHT22, temp_DS18B20);
+//        broadcastUdpMessage(message_buffer);
     }
 }
 
 void broadcastUdpMessage(const char* message){
-    char internal_message_buffer[100];
-    udpMessageCount++;
-    sprintf(internal_message_buffer, "%ld_%ld: %s", udpMessageCount, millis(), message);
-    udpEthernet.beginPacket(broadcastIp, UDP_BROADCAST_PORT);
-    udpEthernet.write(internal_message_buffer);
-    udpEthernet.endPacket();
+//    char internal_message_buffer[100];
+//    GString gString (internal_message_buffer);
+//    udpMessageCount++;
+//    gString.print("[");
+//    gString.print(udpMessageCount);
+//    gString.print(":");
+//    gString.print(millis());
+//    gString.print("]");
+//    gString.print(message);
+//    udpEthernet.beginPacket(broadcastIp, UDP_BROADCAST_PORT);
+//    udpEthernet.write(internal_message_buffer);
+//    udpEthernet.endPacket();
 }
 
 void threadChildsSetup() {
