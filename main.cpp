@@ -47,6 +47,7 @@ IPAddress ip_default(192, 168, 10, 20);
 IPAddress ip_udp_client(192, 168, 10, 1);
 EthernetServer server(80);
 EthernetClient client;
+EthernetClient narodmonClient;
 EthernetUDP udpEthernet;
 IPAddress broadcastIp;
 
@@ -57,12 +58,13 @@ int pinState[] = {0, 0, 0, 0};  // Состояние пинов
 const int relayPins[] = {22, 5, 6, 7};
 float humidity_DHT22 = 0, temp_DHT22 = 0;
 float temp_DS18B20;
-const unsigned long postingInterval = 600000;  // интервал между отправками данных в миллисекундах (10 минут)
+const unsigned long postingInterval = 330000;  // интервал между отправками данных в миллисекундах (10 минут)
 uint32_t nextConnectionTime = 20000;           // время последней передачи данных
 
 char replyBuffer[160];
 const char *narodmon_host = "narodmon.ru";
 const int narodmon_port = 8283;
+char numberConversionBuffer[6];
 
 struct {
     uint32_t total;
@@ -80,11 +82,8 @@ void broadcastUdpMessage(const char *);
 
 void narodmonLoop();
 
-int len(char *buf);
-
-void itos(int n, char bufp[3]);
-
-void httpRequest();
+void ftos(float float_number);
+void sendNarodmonData();
 
 
 
@@ -440,65 +439,60 @@ void narodmonLoop() {
             strcat(replyBuffer, c2);
         }
         strcat(replyBuffer, "\n#T1#");
-        itos((int) temp_DHT22, temp);
-        strcat(replyBuffer, temp);
-        strcat(replyBuffer, ".");
-        itos(abs((temp_DHT22 - (float)((int) temp_DHT22)) * 100.0f), temp);
-        temp[2] = '\0';
-        strcat(replyBuffer, temp);
+        ftos(temp_DHT22);
+        strcat(replyBuffer, numberConversionBuffer);
         strcat(replyBuffer, "\n#H1#");
-        itos((int) humidity_DHT22, temp);
-        strcat(replyBuffer, temp);
-        strcat(replyBuffer, ".");
-        itos(abs((humidity_DHT22 - (float)((int) humidity_DHT22)) * 100.0f), temp);
-        temp[2] = '\0';
-        strcat(replyBuffer, temp);
+        ftos(humidity_DHT22);
+        strcat(replyBuffer, numberConversionBuffer);
         strcat(replyBuffer, "\n#T2#");
-        itos((int) temp_DS18B20, temp);
-        strcat(replyBuffer, temp);
-        strcat(replyBuffer, ".");
-        itos(abs((temp_DS18B20 - (float)((int) temp_DS18B20)) * 100.0f), temp);
-        temp[2] = '\0';
-        strcat(replyBuffer, temp);
+        ftos(temp_DS18B20);
+        strcat(replyBuffer, numberConversionBuffer);
         strcat(replyBuffer, "\n#LAT#56.14031\n#LNG#47.19248\n##\0");
         Serial.print("Prepared replyBuffer:");
         Serial.println(replyBuffer);
-        httpRequest();
+        sendNarodmonData();
         //lat=56.14031&lon=47.19248
     }
 
 }
 
-void httpRequest() {
-    if (client.connect(narodmon_host, narodmon_port)) {
-        client.println(replyBuffer);
-        client.flush();
+void sendNarodmonData() {
+    if (narodmonClient.connect(narodmon_host, narodmon_port)) {
+        narodmonClient.println(replyBuffer);
+        narodmonClient.stop();
         nextConnectionTime = millis()+postingInterval;
         Serial.print(millis());
         Serial.println("Connection to NarodMon successfull!");
     } else
         Serial.println("Can not connect to NarodMon :((");
 }
-
-int len(char *buf) {
-    int i = 0;
-    do {
-        i++;
-    } while (buf[i] != '\0');
-    return i;
-}
-
-void itos(int n, char bufp[3]) //int to string
+void ftos(float float_number) //int to string
 {
-    char buf[3] = {'0', '0', '\0'};
-    int i = 1;
+    numberConversionBuffer[5]='\0';
+    int number = float_number*10;
+    int digits_processed = 0;
+    int char_position=4;
+    if(number<0){
+        number=-number;
+        numberConversionBuffer[0]='-';
+    }
+    else
+        numberConversionBuffer[0]='0';
 
-    while (n > 0) {
-        buf[i] = (n % 10) + 48;
-        i--;
-        n /= 10;
+    numberConversionBuffer[char_position] = (number % 10) + 48;
+    char_position--;
+    numberConversionBuffer[char_position]='.';
+    char_position--;
+    while (digits_processed < 2) {
+        number /= 10;
+        numberConversionBuffer[char_position] = (number % 10) + 48;
+        char_position--;
+        digits_processed++;
+    }
+    while(char_position>0){
+        numberConversionBuffer[char_position]='0';
+        char_position--;
     }
 
-    for (i = 0; i < 3; i++)
-        bufp[i] = buf[i];
+
 }
