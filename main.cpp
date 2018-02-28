@@ -19,6 +19,7 @@
 #include "OneWire.h"
 //#include "ky040_encoder.h"
 #include "sd_card_w5100.h"
+#include "personal_data.h"
 
 #include <Modbus.h>
 #include <ModbusIP.h>
@@ -39,31 +40,29 @@ int value = 0;
 SEMAPHORE_DECL(sem, 0);
 long udpMessageCount = 0;
 
+byte mac_address[] = my_personal_mac_address;
 
-
-byte mac[] = {
-        0xDE,
-        0xAD,
-        0xBE,
-        0xEF,
-        0xFE,
-        0xED};
 ModbusIP modbusIP;
-IPAddress ip_default(192, 168, 6, 20);
-IPAddress ip_udp_client(192, 168, 6, 1);
+IPAddress ip_default(192, 168, 10, 20);
+IPAddress ip_udp_client(192, 168, 10, 1);
 EthernetServer server(80);
 EthernetClient client;
 EthernetUDP udpEthernet;
 IPAddress broadcastIp;
 
 
-int ethernet_config_by_hand = 0;
 const int numPins = 4;
-const int pins[] = {4, 5, 6, 7};    // Пины для реле
+//const int pins[] = {4, 5, 6, 7};    // Пины для реле
 int pinState[] = {0, 0, 0, 0};  // Состояние пинов
-int relayPins[] = {22,5,6,7};
+const int relayPins[] = {22, 5, 6, 7};
 float humidity_DHT22 = 0, temp_DHT22 = 0;
 float temp_DS18B20;
+const unsigned long postingInterval = 600000;  // интервал между отправками данных в миллисекундах (10 минут)
+uint32_t nextConnectionTime = 20000;           // время последней передачи данных
+
+char replyBuffer[160];
+const char *narodmon_host = "narodmon.ru";
+const int narodmon_port = 8283;
 
 struct {
     uint32_t total;
@@ -76,7 +75,18 @@ struct {
 void sendRelayControlPageToEthernetClient();
 
 void updateRelays();
-void broadcastUdpMessage(const char*);
+
+void broadcastUdpMessage(const char *);
+
+void narodmonLoop();
+
+int len(char *buf);
+
+void itos(int n, char bufp[3]);
+
+void httpRequest();
+
+
 
 void show_ds18b20() {
     byte i;
@@ -222,11 +232,13 @@ static THD_FUNCTION(Thread1, arg) {
 
 
 static THD_WORKING_AREA(waThread2, 64);
-void broadcastUdpMessageTest(){
+
+void broadcastUdpMessageTest() {
     udpEthernet.beginPacket(ip_udp_client, UDP_BROADCAST_PORT);
     udpEthernet.write("Hello from Arduino Due");
     udpEthernet.endPacket();
 }
+
 static THD_FUNCTION(Thread2, arg) {
     pinMode(LED_PIN, OUTPUT);
     char message_buffer[100];
@@ -247,7 +259,7 @@ static THD_FUNCTION(Thread2, arg) {
     }
 }
 
-void broadcastUdpMessage(const char* message){
+void broadcastUdpMessage(const char *message) {
 //    char internal_message_buffer[100];
 //    GString gString (internal_message_buffer);
 //    udpMessageCount++;
@@ -279,7 +291,7 @@ void setup() {
 //    setup_ky040();
     sd_card_w5100_setup();
 
-    Ethernet.begin(mac);
+    Ethernet.begin(mac_address);
     server.begin();
     udpEthernet.begin(UDP_BROADCAST_PORT);
 
@@ -289,23 +301,23 @@ void setup() {
     broadcastIp = Ethernet.localIP();
     broadcastIp[3] = 255;
 
-    modbusIP.config(mac, Ethernet.localIP());
-    modbusIP.addIsts (SWITCH_ISTS);
-    modbusIP.addHreg(SWITCH_ISTS-10);
-    modbusIP.addHreg(SWITCH_ISTS-20);
+    modbusIP.config(mac_address, Ethernet.localIP());
+    modbusIP.addIsts(SWITCH_ISTS);
+    modbusIP.addHreg(SWITCH_ISTS - 10);
+    modbusIP.addHreg(SWITCH_ISTS - 20);
 
-    for(int i=0;i<numPins;i++)
-    pinMode(pins[i], OUTPUT);
+    for (int i = 0; i < numPins; i++)
+        pinMode(relayPins[i], OUTPUT);
 
     analogReadResolution(12);
     chBegin(threadChildsSetup);
-
+    nextConnectionTime = millis() - postingInterval + 15000; //первое соединение через 15 секунд после запуска
 
 }
 
 void loop() {
     delay(10);
-    modbusIP.task ();
+    modbusIP.task();
     client = server.available();
 
     if (client) {
@@ -323,19 +335,19 @@ void loop() {
             }
         } else if (webRequestType.compareTo("POST ") == 0) {
             String clientRequest = client.readString();
-            if (clientRequest.indexOf("r0=on")>0)
+            if (clientRequest.indexOf("r0=on") > 0)
                 pinState[0] = 1;
             else
                 pinState[0] = 0;
-            if (clientRequest.indexOf("r1=on")>0)
+            if (clientRequest.indexOf("r1=on") > 0)
                 pinState[1] = 1;
             else
                 pinState[1] = 0;
-            if (clientRequest.indexOf("r2=on")>0)
+            if (clientRequest.indexOf("r2=on") > 0)
                 pinState[2] = 1;
             else
                 pinState[2] = 0;
-            if (clientRequest.indexOf("r3=on")>0)
+            if (clientRequest.indexOf("r3=on") > 0)
                 pinState[3] = 1;
             else
                 pinState[3] = 0;
@@ -350,15 +362,16 @@ void loop() {
         }
         client.stop();
     }
+    narodmonLoop();
 }
 
 void updateRelays() {
-    for(int i=0; i < 4; i++){
-                if(pinState[i])
-                    digitalWrite(relayPins[i],HIGH);
-                else
-                    digitalWrite(relayPins[i],LOW);
-            }
+    for (int i = 0; i < 4; i++) {
+        if (pinState[i])
+            digitalWrite(relayPins[i], HIGH);
+        else
+            digitalWrite(relayPins[i], LOW);
+    }
 }
 
 void sendRelayControlPageToEthernetClient() {
@@ -367,7 +380,7 @@ void sendRelayControlPageToEthernetClient() {
     client.println();
     client.println("<html>");
     client.println("<head>");
-    client.println( "<meta http-equiv=\"refresh\" content=\"30\">");
+    client.println("<meta http-equiv=\"refresh\" content=\"30\">");
     client.println("<title>Zelectro. Relay + Ethernet shield.</title>");
     client.println("</head>");
     client.println("<body>");
@@ -399,4 +412,93 @@ void sendRelayControlPageToEthernetClient() {
     client.print(humidity_DHT22);
     client.println("</body>");
     client.println("</html>");
+}
+
+
+void narodmonLoop() {
+    if ((millis() > nextConnectionTime)) {
+        char temp[3];
+        //формирование HTTP-запроса
+        memset(replyBuffer, 0, sizeof(replyBuffer));
+        strcpy(replyBuffer, "#");
+
+        //Конвертируем MAC-адрес
+        for (int k = 0; k < 6; k++) {
+            int b1 = mac_address[k] / 16;
+            int b2 = mac_address[k] % 16;
+            char c1[2], c2[2];
+
+            if (b1 > 9) c1[0] = (char) (b1 - 10) + 'A';
+            else c1[0] = (char) (b1) + '0';
+            if (b2 > 9) c2[0] = (char) (b2 - 10) + 'A';
+            else c2[0] = (char) (b2) + '0';
+
+            c1[1] = '\0';
+            c2[1] = '\0';
+
+            strcat(replyBuffer, c1);
+            strcat(replyBuffer, c2);
+        }
+        strcat(replyBuffer, "\n#T1#");
+        itos((int) temp_DHT22, temp);
+        strcat(replyBuffer, temp);
+        strcat(replyBuffer, ".");
+        itos(abs((temp_DHT22 - (float)((int) temp_DHT22)) * 100.0f), temp);
+        temp[2] = '\0';
+        strcat(replyBuffer, temp);
+        strcat(replyBuffer, "\n#H1#");
+        itos((int) humidity_DHT22, temp);
+        strcat(replyBuffer, temp);
+        strcat(replyBuffer, ".");
+        itos(abs((humidity_DHT22 - (float)((int) humidity_DHT22)) * 100.0f), temp);
+        temp[2] = '\0';
+        strcat(replyBuffer, temp);
+        strcat(replyBuffer, "\n#T2#");
+        itos((int) temp_DS18B20, temp);
+        strcat(replyBuffer, temp);
+        strcat(replyBuffer, ".");
+        itos(abs((temp_DS18B20 - (float)((int) temp_DS18B20)) * 100.0f), temp);
+        temp[2] = '\0';
+        strcat(replyBuffer, temp);
+        strcat(replyBuffer, "\n#LAT#56.14031\n#LNG#47.19248\n##\0");
+        Serial.print("Prepared replyBuffer:");
+        Serial.println(replyBuffer);
+        httpRequest();
+        //lat=56.14031&lon=47.19248
+    }
+
+}
+
+void httpRequest() {
+    if (client.connect(narodmon_host, narodmon_port)) {
+        client.println(replyBuffer);
+        client.flush();
+        nextConnectionTime = millis()+postingInterval;
+        Serial.print(millis());
+        Serial.println("Connection to NarodMon successfull!");
+    } else
+        Serial.println("Can not connect to NarodMon :((");
+}
+
+int len(char *buf) {
+    int i = 0;
+    do {
+        i++;
+    } while (buf[i] != '\0');
+    return i;
+}
+
+void itos(int n, char bufp[3]) //int to string
+{
+    char buf[3] = {'0', '0', '\0'};
+    int i = 1;
+
+    while (n > 0) {
+        buf[i] = (n % 10) + 48;
+        i--;
+        n /= 10;
+    }
+
+    for (i = 0; i < 3; i++)
+        bufp[i] = buf[i];
 }
